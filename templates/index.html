@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mini Shop</title>
+<style>
+  body { font-family: Arial, sans-serif; margin: 0; background: #f4f6f8; color: #111; }
+  header { background: #232f3e; color: #fff; padding: 14px 24px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; }
+  main { padding: 20px 24px; max-width: 1200px; margin: 0 auto; }
+  .layout { display: grid; grid-template-columns: minmax(260px, 360px) 1fr; gap: 20px; align-items: start; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; }
+  .card, .panel { background: #fff; border-radius: 8px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.12); }
+  .panel { margin-bottom: 20px; }
+  .price { color: #b12704; font-weight: bold; font-size: 18px; }
+  .muted { color: #666; font-size: 13px; }
+  button { background: #ffd814; border: 1px solid #fcd200; padding: 8px 12px; border-radius: 6px; cursor: pointer; margin: 6px 6px 0 0; font-size: 14px; }
+  button.dark { background: #232f3e; color: #fff; border-color: #232f3e; }
+  input { padding: 8px; margin: 4px 0; width: 100%; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; }
+  .msg { margin-top: 8px; font-size: 14px; color: #067d62; min-height: 18px; }
+  .row { border-bottom: 1px solid #eee; padding: 6px 0; font-size: 14px; }
+  @media (max-width: 800px) { .layout { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <strong>Mini Shop</strong>
+  <span id="userInfo">Guest</span>
+</header>
+<main>
+  <div class="layout">
+    <aside>
+      <div class="panel">
+        <h3>Login / Register</h3>
+        <input id="name" placeholder="Naam (sirf register ke liye)">
+        <input id="email" placeholder="Email">
+        <input id="password" type="password" placeholder="Password (kam se kam 6 characters)">
+        <button class="dark" onclick="register()">Register</button>
+        <button class="dark" onclick="login()">Login</button>
+        <button onclick="logout()">Logout</button>
+        <div class="msg" id="authMsg"></div>
+      </div>
+
+      <div class="panel" id="cartPanel" style="display:none">
+        <h3>Cart</h3>
+        <div id="cartItems"></div>
+        <p><strong>Total: ₹<span id="cartTotal">0</span></strong></p>
+        <button class="dark" onclick="checkout()">Checkout</button>
+        <div class="msg" id="cartMsg"></div>
+      </div>
+
+      <div class="panel" id="ordersPanel" style="display:none">
+        <h3>Mere Orders</h3>
+        <div id="orderList"></div>
+      </div>
+    </aside>
+
+    <section>
+      <h2>Products</h2>
+      <div class="grid" id="products"></div>
+    </section>
+  </div>
+</main>
+
+<script>
+let currentUser = null;
+
+async function api(url, method = 'GET', body = null) {
+  const opts = { method: method, headers: { 'Content-Type': 'application/json' } };
+  if (body) opts.body = JSON.stringify(body);
+  const res = await fetch(url, opts);
+  return res.json();
+}
+
+function esc(text) {
+  const d = document.createElement('div');
+  d.innerText = text;
+  return d.innerHTML;
+}
+
+async function loadProducts() {
+  const items = await api('/api/products');
+  document.getElementById('products').innerHTML = items.map(p => `
+    <div class="card">
+      <h3>${esc(p.name)}</h3>
+      <div class="muted">${esc(p.category)}</div>
+      <div class="price">₹${p.price}</div>
+      <div class="muted">Stock: ${p.stock}</div>
+      <button onclick="addToCart(${p.id})" ${p.stock < 1 ? 'disabled' : ''}>
+        ${p.stock < 1 ? 'Stock khatam' : 'Cart mein daalo'}
+      </button>
+    </div>`).join('');
+}
+
+async function refreshUser() {
+  const me = await api('/api/me');
+  currentUser = me.user;
+  document.getElementById('userInfo').innerText = currentUser ? 'Hello, ' + currentUser.name : 'Guest';
+  document.getElementById('cartPanel').style.display = currentUser ? 'block' : 'none';
+  document.getElementById('ordersPanel').style.display = currentUser ? 'block' : 'none';
+  loadCart();
+  loadOrders();
+}
+
+async function register() {
+  const res = await api('/api/register', 'POST', {
+    name: document.getElementById('name').value,
+    email: document.getElementById('email').value,
+    password: document.getElementById('password').value
+  });
+  document.getElementById('authMsg').innerText = res.message;
+}
+
+async function login() {
+  const res = await api('/api/login', 'POST', {
+    email: document.getElementById('email').value,
+    password: document.getElementById('password').value
+  });
+  document.getElementById('authMsg').innerText = res.message;
+  refreshUser();
+}
+
+async function logout() {
+  const res = await api('/api/logout', 'POST');
+  document.getElementById('authMsg').innerText = res.message;
+  refreshUser();
+}
+
+async function addToCart(id) {
+  const res = await api('/api/cart', 'POST', { product_id: id, quantity: 1 });
+  alert(res.message);
+  loadCart();
+}
+
+async function loadCart() {
+  if (!currentUser) return;
+  const data = await api('/api/cart');
+  document.getElementById('cartItems').innerHTML = data.items.map(i =>
+    `<div class="row">${esc(i.name)} x ${i.quantity} = ₹${i.subtotal}</div>`).join('') || '<div class="muted">Cart khaali hai</div>';
+  document.getElementById('cartTotal').innerText = data.total;
+}
+
+async function checkout() {
+  const res = await api('/api/checkout', 'POST', {});
+  document.getElementById('cartMsg').innerText = res.message;
+  loadProducts();
+  loadCart();
+  loadOrders();
+}
+
+async function loadOrders() {
+  if (!currentUser) return;
+  const data = await api('/api/orders');
+  document.getElementById('orderList').innerHTML = data.orders.map(o =>
+    `<div class="row">Order #${o.id} · ₹${o.total} <span class="muted">${esc(o.created_at)}</span></div>`).join('')
+    || '<div class="muted">Abhi koi order nahi</div>';
+}
+
+loadProducts();
+refreshUser();
+</script>
+</body>
+</html>
